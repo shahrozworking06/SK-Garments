@@ -1,0 +1,8 @@
+node_modules/
+.env
+.env.*
+!.env.example
+.netlify/*
+!.netlify/features/
+!.netlify/results.md
+public/vendor/
