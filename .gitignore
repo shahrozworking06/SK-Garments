@@ -1,0 +1,8 @@
+node_modules/
+public/
+.env
+.env.*
+.netlify/*
+!.netlify/results.md
+!.netlify/features/
+!.netlify/features/netlify-identity

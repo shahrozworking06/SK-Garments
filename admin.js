@@ -1,9 +1,10 @@
+import { login, logout, handleAuthCallback, requestPasswordRecovery, updateUser, acceptInvite } from '@netlify/identity';
 const $=id=>document.getElementById(id),money=n=>"Rs. "+Number(n).toLocaleString("en-PK"),esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-let products=[],orders=[],messages=[],currentPhone="";
-async function api(url,opts={}){let r=await fetch(url,{...opts,headers:{...(opts.body&&!(opts.body instanceof FormData)?{"Content-Type":"application/json"}:{ }),...(opts.headers||{})}});let d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.error||"Request failed");return d}
-async function boot(){try{let me=await api("/api/admin/me");$("loginWrap").classList.add("hidden");$("app").classList.remove("hidden");$("adminEmail").textContent=me.email;showTab("dashboard");loadDashboard()}catch(e){$("loginWrap").classList.remove("hidden")}}
-$("loginForm").onsubmit=async e=>{e.preventDefault();let f=new FormData(e.target);try{await api("/api/admin/login",{method:"POST",body:JSON.stringify({email:f.get("email"),password:f.get("password")})});$("loginError").textContent="";boot()}catch(err){$("loginError").textContent=err.message}};
-$("logout").onclick=async()=>{await api("/api/admin/logout",{method:"POST"});location.reload()};
+let products=[],orders=[],messages=[],currentPhone="", inviteToken=null;
+async function api(url,opts={}){let r=await fetch(url,{...opts,headers:{...(opts.body&&!(opts.body instanceof FormData)?{"Content-Type":"application/json"}:{ }),...(opts.headers||{})}});const isJson=(r.headers.get("content-type")||"").includes("application/json");let d=isJson?await r.json():{};if(!isJson)throw Error("The store service is unavailable. Please try again after deployment.");if(!r.ok)throw Error(d.error||"The request could not be completed. Please try again.");return d}
+async function boot(){try{let me=await api("/api/admin/me");$("loginWrap").classList.add("hidden");$("app").classList.remove("hidden");$("adminEmail").textContent=me.email;showTab("dashboard");await loadDashboard()}catch(e){$("app").classList.add("hidden");$("loginWrap").classList.remove("hidden");if(!e.message.includes("Please sign in"))$("loginError").textContent=e.message}}
+$("loginForm").onsubmit=async e=>{e.preventDefault();let f=new FormData(e.target);try{await login(f.get("email"),f.get("password"));$("loginError").textContent="";boot()}catch(err){$("loginError").textContent=err.message}};
+$("logout").onclick=async()=>{await logout();location.reload()};
 document.querySelectorAll("[data-tab]").forEach(b=>b.onclick=()=>showTab(b.dataset.tab));
 function showTab(tab){document.querySelectorAll(".pane").forEach(p=>p.classList.add("hidden"));$(tab).classList.remove("hidden");document.querySelectorAll("[data-tab]").forEach(b=>b.classList.toggle("active",b.dataset.tab===tab));$("pageTitle").textContent=({dashboard:"Dashboard",products:"Products",orders:"Orders",messages:"Customer chat",settings:"Bank & settings"})[tab];if(tab==="products")loadProducts();if(tab==="orders")loadOrders();if(tab==="messages")loadMessages();if(tab==="settings")loadSettings()}
 async function loadDashboard(){let d=await api("/api/admin/summary");$("stats").innerHTML=[["Total products",d.products],["Total orders",d.orders],["Pending orders",d.pending],["Sales (confirmed+)",money(d.revenue)],["Unread messages",d.unread]].map(x=>`<div class="stat"><small>${x[0]}</small><b>${x[1]}</b></div>`).join("")}
@@ -19,4 +20,27 @@ function openConversation(phone){currentPhone=phone;let arr=messages.filter(m=>m
 $("replyForm").onsubmit=async e=>{e.preventDefault();if(!currentPhone)return alert("Choose a customer conversation first.");try{await api("/api/admin/messages/reply",{method:"POST",body:JSON.stringify({phone:currentPhone,message:$("replyText").value})});$("replyText").value="";await loadMessages();openConversation(currentPhone)}catch(err){alert(err.message)}};
 async function loadSettings(){let d=await api("/api/admin/settings"),f=$("settingsForm");for(let k of ["shop_name","whatsapp_number","bank_name","account_title","account_number","iban","payment_instructions"])f.elements[k].value=d[k]||"";f.elements.bank_enabled.checked=d.bank_enabled}
 $("settingsForm").onsubmit=async e=>{e.preventDefault();let f=e.target,d={};for(let k of ["shop_name","whatsapp_number","bank_name","account_title","account_number","iban","payment_instructions"])d[k]=f.elements[k].value;d.bank_enabled=f.elements.bank_enabled.checked;try{await api("/api/admin/settings",{method:"PUT",body:JSON.stringify(d)});$("settingsResult").textContent="Settings saved."}catch(err){$("settingsResult").textContent=err.message}}
-boot();
+async function startAuth(){
+  try {
+    const callback=await handleAuthCallback();
+    if(callback?.type==="invite"||callback?.type==="recovery"){
+      inviteToken=callback.type==="invite"?callback.token:null;
+      $("loginForm").classList.add("hidden");$("passwordForm").classList.remove("hidden");return;
+    }
+    await boot();
+  } catch(e){$("loginError").textContent=e.message||"This login link is invalid or has expired. Request a new invitation or password reset.";}
+}
+$("forgotPassword").onclick=async()=>{
+  const email=$("loginForm").elements.email.value.trim();
+  if(!email){$("loginError").textContent="Enter your owner email above, then choose Forgot password.";return;}
+  try{await requestPasswordRecovery(email);$("loginError").textContent="If this email has an account, a password reset link is on its way. Check your inbox and spam folder.";}catch(e){$("loginError").textContent=e.message;}
+};
+$("passwordForm").onsubmit=async e=>{
+  e.preventDefault();const f=e.target;
+  if(f.elements.password.value!==f.elements.confirm.value){$("passwordError").textContent="Passwords must match.";return;}
+  try{
+    if(inviteToken)await acceptInvite(inviteToken,f.elements.password.value);else await updateUser({password:f.elements.password.value});
+    inviteToken=null;f.reset();$("passwordForm").classList.add("hidden");$("loginForm").classList.remove("hidden");await boot();
+  }catch(err){$("passwordError").textContent=err.message;}
+};
+startAuth();
