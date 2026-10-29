@@ -1,9 +1,101 @@
+import { login, logout, getUser, handleAuthCallback, requestPasswordRecovery, updateUser, acceptInvite } from "/vendor/identity.js";
 const $=id=>document.getElementById(id),money=n=>"Rs. "+Number(n).toLocaleString("en-PK"),esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 let products=[],orders=[],messages=[],currentPhone="";
-async function api(url,opts={}){let r=await fetch(url,{...opts,headers:{...(opts.body&&!(opts.body instanceof FormData)?{"Content-Type":"application/json"}:{ }),...(opts.headers||{})}});let d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.error||"Request failed");return d}
-async function boot(){try{let me=await api("/api/admin/me");$("loginWrap").classList.add("hidden");$("app").classList.remove("hidden");$("adminEmail").textContent=me.email;showTab("dashboard");loadDashboard()}catch(e){$("loginWrap").classList.remove("hidden")}}
-$("loginForm").onsubmit=async e=>{e.preventDefault();let f=new FormData(e.target);try{await api("/api/admin/login",{method:"POST",body:JSON.stringify({email:f.get("email"),password:f.get("password")})});$("loginError").textContent="";boot()}catch(err){$("loginError").textContent=err.message}};
-$("logout").onclick=async()=>{await api("/api/admin/logout",{method:"POST"});location.reload()};
+async function api(url,opts={}){await getUser();let r=await fetch(url,{...opts,headers:{...(opts.body&&!(opts.body instanceof FormData)?{"Content-Type":"application/json"}:{ }),...(opts.headers||{})}});let d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.error||"Request failed");return d}
+let inviteToken = null;
+function authMessage(message, error = false) {
+  $("authStatus").textContent = message;
+  $("authStatus").classList.toggle("error", error);
+}
+function authView(view) {
+  for (const id of ["loginForm", "recoveryForm", "passwordForm"]) $(id).classList.toggle("hidden", id !== view);
+  $("loginError").textContent = "";
+  authMessage("");
+}
+async function busy(form, action) {
+  const button = form.querySelector('button[type="submit"], button.gold');
+  button.disabled = true;
+  form.setAttribute("aria-busy", "true");
+  try { await action(); } catch (error) {
+    authMessage(error.status === 401 || error.status === 400 ? "Unable to sign in. Check your email and password, or use Forgot password. Recovery links can expire; request a new one if needed." : error.message || "Unable to connect. Please try again.", true);
+  } finally { button.disabled = false; form.removeAttribute("aria-busy"); }
+}
+async function boot() {
+  try {
+    await getUser();
+    const me = await api("/api/admin/me");
+    $("loginWrap").classList.add("hidden");
+    $("app").classList.remove("hidden");
+    $("adminEmail").textContent = me.email;
+    showTab("dashboard");
+    await loadDashboard();
+  } catch (error) {
+    $("loginWrap").classList.remove("hidden");
+    $("app").classList.add("hidden");
+    if (error.message !== "Please sign in to the owner panel.") authMessage(error.message, true);
+  }
+}
+$("loginForm").onsubmit = e => {
+  e.preventDefault();
+  return busy(e.target, async () => {
+    const f = new FormData(e.target);
+    await login(String(f.get("email")).trim(), String(f.get("password")));
+    e.target.reset();
+    authMessage("");
+    await boot();
+  });
+};
+$("forgotPassword").onclick = () => {
+  const email = $("loginForm").elements.email.value;
+  authView("recoveryForm");
+  $("recoveryForm").elements.email.value = email;
+  $("recoveryForm").elements.email.focus();
+};
+$("backToLogin").onclick = () => authView("loginForm");
+$("recoveryForm").onsubmit = e => {
+  e.preventDefault();
+  return busy(e.target, async () => {
+    await requestPasswordRecovery(e.target.elements.email.value.trim());
+    authMessage("If an account exists for that email, a reset link is on its way. Check your inbox and spam folder. Open the email link to choose a new password.");
+  });
+};
+$("passwordForm").onsubmit = e => {
+  e.preventDefault();
+  return busy(e.target, async () => {
+    const password = e.target.elements.password.value;
+    if (password.length < 12) throw new Error("Use at least 12 characters.");
+    if (password !== e.target.elements.confirm.value) throw new Error("Passwords do not match.");
+    if (inviteToken) { await acceptInvite(inviteToken, password); inviteToken = null; }
+    else await updateUser({ password });
+    e.target.reset();
+    authView("loginForm");
+    authMessage("Password saved. Your account is ready.");
+    await boot();
+  });
+};
+$("logout").onclick = async () => {
+  try { await logout(); location.reload(); }
+  catch (error) { alert("Could not sign out. Please try again."); }
+};
+async function initializeAuth() {
+  try {
+    const callback = await handleAuthCallback();
+    if (callback?.type === "recovery" || callback?.type === "invite") {
+      inviteToken = callback.type === "invite" ? callback.token : null;
+      // Remove token-bearing history even when an invitation is still pending.
+      history.replaceState(null, "", location.pathname + location.search);
+      authView("passwordForm");
+      $("passwordTitle").textContent = inviteToken ? "Set your owner password" : "Choose a new password";
+      $("passwordForm").elements.password.focus();
+      return;
+    }
+    await boot();
+  } catch (error) {
+    history.replaceState(null, "", location.pathname + location.search);
+    authView("loginForm");
+    authMessage("This access link is invalid or has expired. Use Forgot password to request a new link, or ask the site owner to resend your invitation.", true);
+  }
+}
 document.querySelectorAll("[data-tab]").forEach(b=>b.onclick=()=>showTab(b.dataset.tab));
 function showTab(tab){document.querySelectorAll(".pane").forEach(p=>p.classList.add("hidden"));$(tab).classList.remove("hidden");document.querySelectorAll("[data-tab]").forEach(b=>b.classList.toggle("active",b.dataset.tab===tab));$("pageTitle").textContent=({dashboard:"Dashboard",products:"Products",orders:"Orders",messages:"Customer chat",settings:"Bank & settings"})[tab];if(tab==="products")loadProducts();if(tab==="orders")loadOrders();if(tab==="messages")loadMessages();if(tab==="settings")loadSettings()}
 async function loadDashboard(){let d=await api("/api/admin/summary");$("stats").innerHTML=[["Total products",d.products],["Total orders",d.orders],["Pending orders",d.pending],["Sales (confirmed+)",money(d.revenue)],["Unread messages",d.unread]].map(x=>`<div class="stat"><small>${x[0]}</small><b>${x[1]}</b></div>`).join("")}
@@ -19,4 +111,4 @@ function openConversation(phone){currentPhone=phone;let arr=messages.filter(m=>m
 $("replyForm").onsubmit=async e=>{e.preventDefault();if(!currentPhone)return alert("Choose a customer conversation first.");try{await api("/api/admin/messages/reply",{method:"POST",body:JSON.stringify({phone:currentPhone,message:$("replyText").value})});$("replyText").value="";await loadMessages();openConversation(currentPhone)}catch(err){alert(err.message)}};
 async function loadSettings(){let d=await api("/api/admin/settings"),f=$("settingsForm");for(let k of ["shop_name","whatsapp_number","bank_name","account_title","account_number","iban","payment_instructions"])f.elements[k].value=d[k]||"";f.elements.bank_enabled.checked=d.bank_enabled}
 $("settingsForm").onsubmit=async e=>{e.preventDefault();let f=e.target,d={};for(let k of ["shop_name","whatsapp_number","bank_name","account_title","account_number","iban","payment_instructions"])d[k]=f.elements[k].value;d.bank_enabled=f.elements.bank_enabled.checked;try{await api("/api/admin/settings",{method:"PUT",body:JSON.stringify(d)});$("settingsResult").textContent="Settings saved."}catch(err){$("settingsResult").textContent=err.message}}
-boot();
+initializeAuth();

@@ -1,50 +1,34 @@
-# SK Garments Pro — owner-managed online store
+# SK Garments
 
-This is a Node.js web app starter, not just a static mockup. It includes:
-- Public storefront, product search and category filters
-- Cart and checkout with Cash on Delivery
-- Optional bank-transfer details that the owner can enable/disable
-- Owner-only login at `/admin`
-- Add/edit/delete products, upload product photos, set prices/descriptions/stock
-- Order dashboard and order/payment status updates
-- Customer website chat with owner replies
-- Customer order-status lookup by order code + phone number
-- SQLite database stored on the server
+The store runs on Netlify with static pages, Netlify Functions, Netlify Database for products, orders, messages and settings, and Netlify Blobs for uploaded product images. Owner authentication and password recovery use Netlify Identity.
 
-## Important security and payment notes
-No website can honestly be promised to be impossible to hack. This project uses server-side password hashing, owner-protected APIs, rate limiting, secure HTTP headers and session cookies. Production safety still depends on correct hosting, HTTPS, strong credentials, updates, backups and server configuration.
+## Owner access
 
-**Before going live:**
-1. Use Node.js 20 or newer.
-2. Copy `.env.example` to `.env`.
-3. Set a strong unique `SESSION_SECRET` (32+ random characters), `ADMIN_EMAIL`, and a strong `ADMIN_PASSWORD`. Do not share `.env`.
-4. Set `NODE_ENV=production` on an HTTPS host.
-5. Deploy on a Node.js host with a persistent disk/volume. The `data/` folder must persist across restarts or products/orders/sessions can be lost.
-6. Keep a backup of `data/shop.sqlite` and `public/uploads/`.
-7. Test an order, admin login, photo upload, chat and bank settings before sharing the public URL.
+Open https://sk-garments91.netlify.app/admin (or `/login`). Sign in with your **store Identity account**, which is separate from your Netlify dashboard account.
 
-## Run locally
-```bash
-npm install
-cp .env.example .env
-# Edit .env with your private admin email/password and a long random session secret
-npm start
-```
-Open `http://localhost:3000` for customers and `http://localhost:3000/admin` for the owner dashboard.
+If you forgot your password, select **Forgot password?**, enter your store email, and follow the email link to choose a new password. Links that land on the storefront are forwarded to the owner login automatically. Invitations also let you set your password there. Use at least 12 characters.
 
-## Owner account
-The first admin account is created from `ADMIN_EMAIL` and `ADMIN_PASSWORD` when the database is first initialized. If changing the password after the account has already been created, update the `admins` row using a secure one-time admin script or delete the local database only if you are sure you do not need its orders/products. Do not expose a public sign-up form for admin accounts.
+If you forgot the email, open **Identity** in the [Netlify project dashboard](https://app.netlify.com/projects/sk-garments91/identity) using the Netlify account that owns the project. The user list shows the store account emails. No email addresses or existing passwords are exposed on the public login page.
 
-## Product photos
-In `/admin`, open Products → Add product → choose an image file (JPG/PNG/WEBP/GIF, max 5 MB). Uploaded files are stored in `public/uploads/`.
+If there is no owner account:
 
-## Payment methods
-- COD works as an order request; it does not charge a card.
-- Bank transfer is optional. Enable it in Bank & settings and enter your own verified bank details. The site displays those details at checkout. The owner must manually verify the transfer and mark payment as Paid.
-- Card/wallet gateway payments are **not integrated**. For real online payments, open a merchant account with a supported provider (e.g. a Pakistani payment provider) and integrate their official hosted checkout/API. Never collect card numbers/CVV directly in this website.
+1. In the project's Identity user list, invite an email address you can access.
+2. Open the invitation email and set your password.
+3. In Netlify, open that Identity user, add the `admin` role, and save.
+4. Return to `/admin` and sign in.
 
-## Chat limitations
-The website chat saves messages in the database and lets the owner reply from `/admin`. The customer must use the same phone number to see their conversation again. The customer chat refreshes periodically; it is not instant WebSocket chat.
+The first admin role must be assigned in Netlify. Public registration does not grant store access. Keep Identity registration invite-only for an owner-only store.
 
-## Owner vs customer access
-The `/admin` page is visible as a link, but the management APIs require a valid owner session. Customers cannot add/edit/delete products through the public store. For stronger production deployment, add automated backups, monitoring and consider CSRF protection and a persistent session store backed by a managed database.
+## Deployment
+
+The configuration publishes `public/` and prepares the browser Identity dependency during deployment. Netlify automatically deploys the functions and applies the SQL migration files. Do not manually apply migrations. No separate Express server, local SQLite database, shared password, or session secret is required.
+
+The earlier code used a local SQLite database and required a separate Node server, which did not run on the static Netlify deployment. The checked-out project contained no SQLite data file, and the Netlify database had no public tables when inspected. The new database migrations create store tables with the same three sample products from the original server. Existing data on another host is not automatically imported; retain any original database or uploads for a separate migration if needed.
+
+## Checks
+
+Install dependencies with `npm install --include=dev`. Run `npm run check` and `npm test`. For local platform emulation, use Netlify CLI with `netlify dev --port 8889`.
+
+Checkout calculates prices on the server and reserves stock in a database transaction. Owner APIs require the verified `admin` role. Public checkout and messaging have persistent request limits. Bank transfers still require manual payment verification; no card payment gateway is connected.
+
+Customer chat retains the original phone-based conversation lookup, so it should not be used for sensitive information.
