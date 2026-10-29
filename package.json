@@ -3,18 +3,27 @@
   "version": "1.0.0",
   "private": true,
   "description": "SK Garments storefront with private owner dashboard, product management, orders, bank settings and customer chat.",
-  "main": "server.js",
-  "scripts": {"start": "node server.js"},
-  "engines": {"node": ">=20"},
+  "scripts": {
+    "start": "netlify dev --port 8889",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test tests/api.test.ts tests/owner-ui.test.cjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
   "dependencies": {
-    "bcryptjs": "^2.4.3",
-    "better-sqlite3": "^11.7.0",
-    "connect-sqlite3": "^0.9.16",
-    "dotenv": "^16.4.7",
-    "express": "^4.21.2",
-    "express-rate-limit": "^7.5.0",
-    "express-session": "^1.18.1",
-    "helmet": "^8.0.0",
-    "multer": "^1.4.5-lts.1"
-  }
+    "@netlify/blobs": "^11.1.7",
+    "@netlify/database": "^2.0.1",
+    "@netlify/functions": "^6.0.3",
+    "@netlify/identity": "^2.0.0",
+    "drizzle-orm": "^1.0.0-beta.22",
+    "esbuild": "^0.28.2"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "drizzle-kit": "^1.0.0-beta.22",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  },
+  "type": "module"
 }

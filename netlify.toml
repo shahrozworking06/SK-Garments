@@ -1,0 +1,13 @@
+[build]
+  command = "node scripts/prepare.cjs"
+  publish = "public"
+[functions]
+  directory = "netlify/functions"
+[[redirects]]
+  from = "/admin"
+  to = "/admin.html"
+  status = 200
+[[headers]]
+  for = "/api/*"
+  [headers.values]
+    Cache-Control = "no-store"
